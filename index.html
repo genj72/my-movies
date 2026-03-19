@@ -207,7 +207,6 @@
         <span class="tag-pill" data-special="criterion">Criterion</span>
         <span class="tag-pill" data-special="awards">수상작</span>
         <span class="tag-pill" data-special="selections">선정작</span>
-        <span class="tag-pill" data-special="none-grade">무등급</span>
       </div>
     </div>
 
@@ -376,7 +375,6 @@ function filterMovies() {
     if (state.special.has('criterion')  && !m.criterion)  return false;
     if (state.special.has('awards')     && !m.awards)     return false;
     if (state.special.has('selections') && !m.selections) return false;
-    if (state.special.has('none-grade') && (m.grade==='◎'||m.grade==='★')) return false;
     return true;
   });
 }
@@ -469,7 +467,7 @@ function renderActiveFilters() {
   state.genres.forEach(g=>chips.push({label:`장르: ${g}`,key:'genre',val:g}));
   state.tags.forEach(t=>chips.push({label:`태그: ${t}`,key:'tag',val:t}));
   state.special.forEach(s=>chips.push({
-    label:s==='criterion'?'Criterion':s==='awards'?'수상작':s==='selections'?'선정작':'무등급',
+    label:s==='criterion'?'Criterion':s==='awards'?'수상작':'선정작',
     key:'special',val:s
   }));
   af.innerHTML=chips.map((c,i)=>
