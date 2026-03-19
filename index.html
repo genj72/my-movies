@@ -191,6 +191,17 @@
     </div>
 
     <div class="sidebar-section">
+      <span class="sidebar-label">제작 연도</span>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input type="number" id="year-from" placeholder="시작" min="1900" max="2030"
+          style="width:50%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);font-family:inherit;font-size:13px;color:var(--text);outline:none;">
+        <span style="color:var(--text-faint);font-size:12px">~</span>
+        <input type="number" id="year-to" placeholder="끝" min="1900" max="2030"
+          style="width:50%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);font-family:inherit;font-size:13px;color:var(--text);outline:none;">
+      </div>
+    </div>
+
+    <div class="sidebar-section">
       <span class="sidebar-label">특별 선정</span>
       <div class="tag-cloud">
         <span class="tag-pill" data-special="criterion">Criterion</span>
@@ -243,13 +254,10 @@
 
 <script>
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  ★ 설정 — 시트 ID나 탭 이름이 바뀌면 여기만 수정
+//  ★ 설정 — Apps Script URL이 바뀌면 여기만 수정
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const SHEET_ID   = '1L1KgMcJnVsLoqIldZ8Qw8ftHBR_LmRySeCuzUOYt48A';
-const SHEET_NAME = 'moviedb';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzr4-rf3IvdVdNZxv1cOxt79zDiM7tK93Q2lL6B0BH0wzEtBHz9k4ozwsi7_27qT6Vn/exec';
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-const CSV_URL   = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
 const PAGE_SIZE = 50;
 const CACHE_KEY  = 'moviedb_v2';
 const CACHE_TS   = 'moviedb_v2_ts';
@@ -259,59 +267,42 @@ let MOVIES = [];
 let state  = freshState();
 
 function freshState() {
-  return { query:'', grade:'', countries:new Set(), genres:new Set(),
+  return { query:'', grade:'', yearFrom:'', yearTo:'', countries:new Set(), genres:new Set(),
            tags:new Set(), special:new Set(), sort:'id-asc', page:1 };
 }
 
-// ── CSV 파서 (쌍따옴표·줄바꿈 완전 처리) ──
-function parseCSV(text) {
-  const rows = []; let row=[], cell='', inQ=false;
-  for (let i=0; i<text.length; i++) {
-    const c=text[i], n=text[i+1];
-    if (inQ) {
-      if (c==='"'&&n==='"') { cell+='"'; i++; }
-      else if (c==='"') inQ=false;
-      else cell+=c;
-    } else {
-      if (c==='"') inQ=true;
-      else if (c===',') { row.push(cell.trim()); cell=''; }
-      else if (c==='\n'||(c==='\r'&&n==='\n')) {
-        row.push(cell.trim()); rows.push(row); row=[]; cell='';
-        if (c==='\r') i++;
-      } else cell+=c;
-    }
-  }
-  if (cell||row.length) { row.push(cell.trim()); rows.push(row); }
-  return rows;
-}
-
-function toMovies(rows) {
-  const movies=[];
-  for (let i=1; i<rows.length; i++) {
-    const r=rows[i];
+// ── Apps Script JSON → 영화 배열 변환 ──
+function rowsToMovies(rows) {
+  const movies = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
     if (!r[0]) continue;
-    const v = col => (r[col]&&r[col]!=='-'&&r[col]!=='') ? r[col] : '';
+    const v = col => {
+      const val = r[col];
+      const s = (val !== undefined && val !== null) ? String(val).trim() : '';
+      return (s && s !== '-') ? s : '';
+    };
     movies.push({
-      id: parseInt(r[0])||i, grade:v(1), en:v(2), orig:v(3), ko:v(4),
-      year:v(5), country:v(6), genre:v(7), director:v(8), cast:v(9),
-      tags:v(10), desc:v(11), criterion:v(12), awards:v(13), selections:v(14), note:v(15)
+      id: parseInt(r[0]) || i, grade: v(1), en: v(2), orig: v(3), ko: v(4),
+      year: v(5), country: v(6), genre: v(7), director: v(8), cast: v(9),
+      tags: v(10), desc: v(11), criterion: v(12), awards: v(13), selections: v(14), note: v(15)
     });
   }
   return movies;
 }
 
-// ── 데이터 로드 ──
-async function loadData(force=false) {
+// ── 데이터 로드 (Apps Script JSON) ──
+async function loadData(force = false) {
   const loadEl = document.getElementById('loading-screen');
   const errEl  = document.getElementById('loading-error');
   const h2     = loadEl.querySelector('h2');
-  loadEl.style.display='flex'; errEl.style.display='none'; h2.style.display='block';
+  loadEl.style.display = 'flex'; errEl.style.display = 'none'; h2.style.display = 'block';
 
   if (!force) {
     try {
       const cached = localStorage.getItem(CACHE_KEY);
-      const ts     = parseInt(localStorage.getItem(CACHE_TS)||'0');
-      if (cached && Date.now()-ts < CACHE_TTL) {
+      const ts     = parseInt(localStorage.getItem(CACHE_TS) || '0');
+      if (cached && Date.now() - ts < CACHE_TTL) {
         MOVIES = JSON.parse(cached);
         return onLoaded();
       }
@@ -319,11 +310,10 @@ async function loadData(force=false) {
   }
 
   try {
-    const resp = await fetch(CSV_URL);
+    const resp = await fetch(APPS_SCRIPT_URL);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const text = await resp.text();
-    const rows = parseCSV(text);
-    MOVIES = toMovies(rows);
+    const rows = await resp.json();
+    MOVIES = rowsToMovies(rows);
     if (!MOVIES.length) throw new Error('데이터 없음');
     try {
       localStorage.setItem(CACHE_KEY, JSON.stringify(MOVIES));
@@ -332,8 +322,8 @@ async function loadData(force=false) {
     onLoaded();
   } catch(e) {
     console.error(e);
-    h2.style.display='none';
-    errEl.style.display='block';
+    h2.style.display = 'none';
+    errEl.style.display = 'block';
   }
 }
 
@@ -372,6 +362,8 @@ function filterMovies() {
   const q = state.query.toLowerCase();
   return MOVIES.filter(m => {
     if (q && ![m.ko,m.en,m.orig,m.director,m.cast].join(' ').toLowerCase().includes(q)) return false;
+    if (state.yearFrom && parseInt(m.year) < parseInt(state.yearFrom)) return false;
+    if (state.yearTo   && parseInt(m.year) > parseInt(state.yearTo))   return false;
     if (state.grade==='◎' && m.grade!=='◎') return false;
     if (state.grade==='★' && m.grade!=='★') return false;
     if (state.grade==='none' && (m.grade==='◎'||m.grade==='★')) return false;
@@ -466,6 +458,12 @@ function renderPagination(total) {
 function renderActiveFilters() {
   const af=document.getElementById('active-filters');
   const chips=[];
+  if(state.yearFrom || state.yearTo) {
+    const label = state.yearFrom && state.yearTo ? `${state.yearFrom}~${state.yearTo}년`
+                : state.yearFrom ? `${state.yearFrom}년 이후`
+                : `${state.yearTo}년 이전`;
+    chips.push({label, key:'year'});
+  }
   if(state.grade) chips.push({label:state.grade==='none'?'일반작':`등급: ${state.grade}`,key:'grade'});
   state.countries.forEach(c=>chips.push({label:`국가: ${c}`,key:'country',val:c}));
   state.genres.forEach(g=>chips.push({label:`장르: ${g}`,key:'genre',val:g}));
@@ -479,6 +477,7 @@ function renderActiveFilters() {
   af.querySelectorAll('.filter-chip').forEach((el,i)=>{
     el.addEventListener('click',()=>{
       const ch=chips[i];
+      if(ch.key==='year')    { state.yearFrom=''; state.yearTo=''; document.getElementById('year-from').value=''; document.getElementById('year-to').value=''; }
       if(ch.key==='grade')   state.grade='';
       if(ch.key==='country') state.countries.delete(ch.val);
       if(ch.key==='genre')   state.genres.delete(ch.val);
@@ -539,12 +538,16 @@ function closeModal() { document.getElementById('modal-overlay').classList.remov
 
 // ── 이벤트 ──
 document.getElementById('search-input').addEventListener('input',e=>{state.query=e.target.value;state.page=1;render();});
+document.getElementById('year-from').addEventListener('input',e=>{state.yearFrom=e.target.value;state.page=1;render();});
+document.getElementById('year-to').addEventListener('input',e=>{state.yearTo=e.target.value;state.page=1;render();});
 document.querySelectorAll('.grade-btn').forEach(btn=>btn.addEventListener('click',()=>{state.grade=btn.dataset.grade;state.page=1;syncUI();render();}));
 document.getElementById('sort-select').addEventListener('change',e=>{state.sort=e.target.value;state.page=1;render();});
 document.getElementById('reset-btn').addEventListener('click',()=>{
   state=freshState();
   document.getElementById('search-input').value='';
   document.getElementById('sort-select').value='id-asc';
+  document.getElementById('year-from').value='';
+  document.getElementById('year-to').value='';
   syncUI(); render();
 });
 document.getElementById('country-group').addEventListener('change',e=>{
